@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="auto">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f172a">
+  <title>QR Maker — Tạo mã QR (Static, Pro UI)</title>
+  <!-- Tailwind (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- QRCode.js -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+  <style>
+    :root{
+      color-scheme: light dark;
+      --bg: 249 250 251; --card: 255 255 255; --fg: 15 23 42;
+      --muted: 100 116 139; --border: 203 213 225; --brand: 15 23 42;
+    }
+    html[data-theme='light']{ --bg: 249 250 251; --card: 255 255 255; --fg: 15 23 42; --muted: 71 85 105; --border: 203 213 225; --brand: 15 23 42; }
+    html[data-theme='dark']{ --bg: 11 18 32; --card: 17 24 39; --fg: 226 232 240; --muted: 148 163 184; --border: 51 65 85; --brand: 241 245 249; }
+    html, body { height: 100%; background: rgb(var(--bg)); color: rgb(var(--fg)); }
+    .card { background: rgb(var(--card)/0.92); }
+    .btn { min-height: 44px; }
+    .tab-active { border: 1px solid rgb(var(--border)); }
+    .backdrop-blur-12 { backdrop-filter: saturate(180%) blur(12px); -webkit-backdrop-filter: saturate(180%) blur(12px); }
+    .ios-card { background: rgb(var(--card)/0.8); }
+    .ios-border { border: 1px solid rgb(var(--border)); }
+
+    .toast-enter { opacity: 0; transform: translateY(-16px); }
+    .toast-enter-active { opacity: 1; transform: translateY(0); transition: all .25s ease; }
+    .toast-leave-active { opacity: 0; transform: translateY(-16px); transition: all .25s ease; }
+
+    /* In: chỉ hiển thị vùng QR */
+    @media print {
+      html, body { background: #fff !important; }
+      body * { visibility: hidden !important; }
+      #print-area, #print-area * { visibility: visible !important; }
+      #print-area {
+        position: fixed !important; inset: 0 !important;
+        display: grid !important; place-items: center !important;
+        padding: 0 !important; margin: 0 !important;
+      }
+      .print-wrap{ width:100%; min-height:100vh; display:grid; place-items:center; }
+      #print-box{ background:#fff !important; border-radius:8mm !important; padding:6mm !important; }
+      #print-proxy canvas{ display:block !important; border-radius:4mm !important; }
+      #print-title{ font-family: ui-sans-serif, system-ui; text-align:center; font-weight:700; margin-top:6mm; font-size:14pt; }
+      .no-print { display:none !important; }
+      #print-area { display:block !important; }
+    }
+  </style>
+</head>
+<body class="min-h-screen selection:bg-slate-900/10">
+  <style id="print-style"></style>
+  <div id="toast-root" class="no-print fixed top-3 inset-x-0 z-50 pointer-events-none flex flex-col items-center gap-2"></div>
+
+  <!-- Header -->
+  <div class="no-print sticky top-0 z-40 px-4">
+    <div class="mx-auto max-w-6xl">
+      <div class="mt-2 rounded-2xl backdrop-blur-12 ios-card ios-border shadow-lg shadow-black/10 px-4 py-3 flex items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div class="size-8 rounded-xl bg-gradient-to-br from-slate-900 to-slate-700 text-white grid place-items-center shadow-md">
+            <svg xmlns="http://www.w3.org/2000/svg" class="size-5" viewBox="0 0 24 24" fill="currentColor"><path d="M3 3h8v8H3V3zm2 2v4h4V5H5zm6 6h2v2h-2v-2zm4 0h6v2h-6v-2zm-2-8h2v4h-2V3zm-8 10h4v2H5v-2zm8 4h2v4h-2v-4zm4 0h2v4h-2v-4zm-12 2h6v2H5v-2z"/></svg>
+          </div>
+          <div>
+            <div class="text-sm font-semibold leading-none" data-i18n="app_title">QR Maker</div>
+            <div class="text-xs opacity-80" data-i18n="app_tagline">Static • No DB • Pro UI</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <select id="langSel" class="h-10 px-3 rounded-xl card text-sm">
+            <option value="vi">Tiếng Việt</option><option value="en">English</option>
+          </select>
+          <button id="themeBtn" class="h-10 px-3 rounded-xl card text-sm"><span data-i18n="theme_auto">Auto</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <main class="pb-28">
+    <section class="mx-auto max-w-6xl p-4 md:p-8">
+      <!-- Tabs -->
+      <div class="no-print grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 mb-4">
+        <button data-tab="url" class="tab btn px-3 py-2 rounded-xl card shadow-sm" data-i18n="tab_url">URL/Text</button>
+        <button data-tab="wifi" class="tab btn px-3 py-2 rounded-xl card shadow-sm" data-i18n="tab_wifi">Wi-Fi</button>
+        <button data-tab="email" class="tab btn px-3 py-2 rounded-xl card shadow-sm" data-i18n="tab_email">Email</button>
+        <button data-tab="sms" class="tab btn px-3 py-2 rounded-xl card shadow-sm" data-i18n="tab_sms">SMS</button>
+        <button data-tab="vcard" class="tab btn px-3 py-2 rounded-xl card shadow-sm" data-i18n="tab_vcard">vCard</button>
+        <button data-tab="file" class="tab btn px-3 py-2 rounded-xl card shadow-sm" data-i18n="tab_file">File</button>
+      </div>
+
+      <div class="grid lg:grid-cols-2 gap-6">
+        <!-- LEFT -->
+        <section class="space-y-4">
+          <div class="rounded-2xl card shadow-xl p-4">
+            <!-- URL/TEXT -->
+            <div data-panel="url" class="panel">
+              <label class="block">
+                <span class="text-sm text-slate-500" data-i18n="type_label">Loại</span>
+                <select id="urlType" class="mt-1 w-full h-12 rounded-xl card px-3 ios-border">
+                  <option value="url" data-i18n="opt_url">URL</option>
+                  <option value="text" data-i18n="opt_text">Văn bản</option>
+                </select>
+              </label>
+              <label class="block mt-3">
+                <span class="text-sm text-slate-500" data-i18n="content_label">Nội dung</span>
+                <textarea id="urlText" rows="4" placeholder="https://example.com…" class="mt-1 w-full rounded-xl card px-3 py-2 ios-border"></textarea>
+              </label>
+            </div>
+
+            <!-- WIFI -->
+            <div data-panel="wifi" class="panel hidden">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label class="block">
+                  <span class="text-sm text-slate-500" data-i18n="ssid">SSID</span>
+                  <input id="wifiSsid" class="mt-1 w-full h-12 rounded-xl card px-3 ios-border" placeholder="MyWiFi" />
+                </label>
+                <label class="block">
+                  <span class="text-sm text-slate-500" data-i18n="security">Bảo mật</span>
+                  <select id="wifiType" class="mt-1 w-full h-12 rounded-xl card px-3 ios-border">
+                    <option value="WPA">WPA/WPA2</option>
+                    <option value="WEP">WEP</option>
+                    <option value="nopass" data-i18n="no_password">Không mật khẩu</option>
+                  </select>
+                </label>
+              </div>
+              <label class="block mt-3">
+                <span class="text-sm text-slate-500" data-i18n="password">Mật khẩu</span>
+                <input id="wifiPass" type="text" class="mt-1 w-full h-12 rounded-xl card px-3 ios-border" />
+              </label>
+              <label class="inline-flex items-center gap-2 mt-2">
+                <input id="wifiHidden" type="checkbox" class="h-4 w-4" />
+                <span data-i18n="hidden_network">Mạng ẩn</span>
+              </label>
+            </div>
+
+            <!-- EMAIL -->
+            <div data-panel="email" class="panel hidden">
+              <label class="block">
+                <span class="text-sm text-slate-500" data-i18n="to">Đến</span>
+                <input id="mailto" type="email" class="mt-1 w-full h-12 rounded-xl card px-3 ios-border" placeholder="email@domain.com" />
+              </label>
+              <label class="block mt-3">
+                <span class="text-sm text-slate-500" data-i18n="subject">Tiêu đề</span>
+                <input id="mailSubject" class="mt-1 w-full h-12 rounded-xl card px-3 ios-border" />
+              </label>
+              <label class="block mt-3">
+                <span class="text-sm text-slate-500" data-i18n="body">Nội dung</span>
+                <textarea id="mailBody" rows="4" class="mt-1 w-full rounded-xl card px-3 py-2 ios-border"></textarea>
+              </label>
+            </div>
+
+            <!-- SMS -->
+            <div data-panel="sms" class="panel hidden">
+              <label class="block">
+                <span class="text-sm text-slate-500" data-i18n="phone">Số điện thoại</span>
+                <input id="smsNumber" class="mt-1 w-full h-12 rounded-xl card px-3 ios-border" placeholder="0123456789" />
+              </label>
+              <label class="block mt-3">
+                <span class="text-sm text-slate-500" data-i18n="sms_text">Nội dung tin nhắn</span>
+                <textarea id="smsBody" rows="3" class="mt-1 w-full rounded-xl card px-3 py-2 ios-border"></textarea>
+              </label>
+            </div>
+
+            <!-- vCard -->
+            <div data-panel="vcard" class="panel hidden">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label class="block"><span class="text-sm text-slate-500" data-i18n="last_name">Họ</span><input id="vLast" class="mt-1 w-full h-12 rounded-xl card px-3 ios-border" /></label>
+                <label class="block"><span class="text-sm text-slate-500" data-i18n="first_name">Tên</span><input id="vFirst" class="mt-1 w-full h-12 rounded-xl card px-3 ios-border" /></label>
+              </div>
+              <label class="block mt-3"><span class="text-sm text-slate-500" data-i18n="company">Công ty</span><input id="vOrg" class="mt-1 w-full h-12 rounded-xl card px-3 ios-border" /></label>
+              <label class="block mt-3"><span class="text-sm text-slate-500" data-i18n="title">Chức vụ</span><input id="vTitle" class="mt-1 w-full h-12 rounded-xl card px-3 ios-border" /></label>
+              <label class="block mt-3"><span class="text-sm text-slate-500" data-i18n="tel">Điện thoại</span><input id="vTel" class="mt-1 w-full h-12 rounded-xl card px-3 ios-border" /></label>
+              <label class="block mt-3"><span class="text-sm text-slate-500" data-i18n="email">Email</span><input id="vEmail" class="mt-1 w-full h-12 rounded-xl card px-3 ios-border" /></label>
+              <label class="block mt-3"><span class="text-sm text-slate-500" data-i18n="address">Địa chỉ</span><input id="vAdr" class="mt-1 w-full h-12 rounded-xl card px-3 ios-border" placeholder="Street;City;Region;Postal;Country" /></label>
+              <label class="block mt-3"><span class="text-sm text-slate-500" data-i18n="website">Website</span><input id="vUrl" class="mt-1 w-full h-12 rounded-xl card px-3 ios-border" /></label>
+            </div>
+
+            <!-- FILE -->
+            <div data-panel="file" class="panel hidden">
+              <p class="text-sm text-slate-600" data-i18n="file_desc">Không DB/backend. Dùng URL công khai hoặc chọn file cục bộ (Object URL).</p>
+              <label class="block mt-3">
+                <span class="text-sm text-slate-500" data-i18n="file_url">URL tải file</span>
+                <input id="fileUrl" class="mt-1 w-full h-12 rounded-xl card px-3 ios-border" placeholder="https://domain.com/app-release.apk" />
+              </label>
+              <div class="mt-3">
+                <label class="block"><span class="text-sm text-slate-500" data-i18n="choose_file">Chọn file (Object URL)</span>
+                  <input id="fileInput" type="file" class="mt-1 w-full h-12 rounded-xl card px-3 py-2 ios-border" />
+                </label>
+              </div>
+              <p class="text-xs text-amber-700 mt-2" data-i18n="object_url_warn">Object URL chỉ hoạt động trên thiết bị hiện tại. Muốn chia sẻ, hãy dùng URL công khai.</p>
+            </div>
+          </div>
+
+          <!-- Options + Print presets -->
+          <div class="rounded-2xl card shadow-xl p-4 space-y-4">
+            <h3 class="font-semibold" data-i18n="qr_options">Tuỳ chọn mã QR</h3>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <label class="block"><span class="text-sm text-slate-500" data-i18n="size">Kích thước (px)</span><input id="qrSize" type="number" min="128" step="32" value="320" class="mt-1 w-full h-12 rounded-xl card px-3 ios-border" /></label>
+              <label class="block"><span class="text-sm text-slate-500" data-i18n="code_color">Màu mã</span><input id="qrDark" type="color" value="#111827" class="mt-1 w-full h-12 rounded-xl card px-3 ios-border" /></label>
+              <label class="block"><span class="text-sm text-slate-500" data-i18n="bg_color">Màu nền</span><input id="qrLight" type="color" value="#ffffff" class="mt-1 w-full h-12 rounded-xl card px-3 ios-border" /></label>
+              <label class="block"><span class="text-sm text-slate-500">ECC</span>
+                <select id="qrECC" class="mt-1 w-full h-12 rounded-xl card px-3 ios-border">
+                  <option value="L">L (7%)</option>
+                  <option value="M" selected>M (15%)</option>
+                  <option value="Q">Q (25%)</option>
+                  <option value="H">H (30%)</option>
+                </select>
+              </label>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+              <label class="block"><span class="text-sm text-slate-500" data-i18n="logo">Logo (tùy chọn)</span>
+                <input id="logoInput" type="file" accept="image/*" class="mt-1 w-full h-12 rounded-xl card px-3 py-2 ios-border" />
+              </label>
+              <label class="block"><span class="text-sm text-slate-500" data-i18n="logo_ratio">Tỉ lệ logo (%)</span>
+                <input id="logoRatio" type="number" min="0" max="40" value="20" class="mt-1 w-full h-12 rounded-xl card px-3 ios-border" />
+              </label>
+            </div>
+
+            <!-- Print options -->
+            <h3 class="font-semibold" data-i18n="print_opts">Tuỳ chọn In</h3>
+            <div class="grid md:grid-cols-2 gap-3">
+              <label class="block">
+                <span class="text-sm text-slate-500" data-i18n="paper_preset">Khổ giấy</span>
+                <select id="paperPreset" class="mt-1 w-full h-12 rounded-xl card px-3 ios-border">
+                  <option value="screen">Mặc định (trình duyệt)</option>
+                  <option value="A4P">A4 dọc</option>
+                  <option value="A4L">A4 ngang</option>
+                  <option value="A5P">A5 dọc</option>
+                  <option value="A5L">A5 ngang</option>
+                  <option value="80mm">80mm roll</option>
+                  <option value="58mm">58mm roll</option>
+                  <option value="custom">Tùy chỉnh (mm)</option>
+                </select>
+              </label>
+              <label class="block">
+                <span class="text-sm text-slate-500" data-i18n="qr_title">Tên QR (hiển thị khi in)</span>
+                <input id="qrTitle" class="mt-1 w-full h-12 rounded-xl card px-3 ios-border" placeholder="Tên QR" />
+              </label>
+              <div class="grid grid-cols-3 gap-3" id="customRow" style="display:none;">
+                <label class="block"><span class="text-sm text-slate-500" data-i18n="paper_w">Rộng (mm)</span><input id="cWidth" type="number" value="80" class="mt-1 w-full h-12 rounded-xl card px-3 ios-border" /></label>
+                <label class="block"><span class="text-sm text-slate-500" data-i18n="paper_h">Cao (mm)</span><input id="cHeight" type="number" value="120" class="mt-1 w-full h-12 rounded-xl card px-3 ios-border" /></label>
+                <label class="block"><span class="text-sm text-slate-500" data-i18n="paper_margin">Lề (mm)</span><input id="cMargin" type="number" value="8" class="mt-1 w-full h-12 rounded-xl card px-3 ios-border" /></label>
+              </div>
+            </div>
+          </div>
+
+          <div class="no-print grid grid-cols-2 sm:flex gap-3 mt-4">
+            <button id="genBtn" class="btn px-4 py-3 rounded-xl bg-slate-900 text-white hover:bg-slate-800 active:scale-[.99] ios-border" data-i18n="btn_generate">Tạo QR</button>
+            <button id="clearBtn" class="btn px-4 py-3 rounded-xl card hover:bg-white ios-border" data-i18n="btn_clear">Làm mới</button>
+          </div>
+        </section>
+
+        <!-- RIGHT -->
+        <section>
+          <div class="rounded-2xl card shadow-xl p-4">
+            <h3 class="font-semibold mb-3" data-i18n="result">Kết quả</h3>
+            <div id="qrWrap" class="mx-auto w-full flex items-center justify-center min-h-64">
+              <div id="qrcode"></div>
+            </div>
+            <div class="no-print grid grid-cols-2 sm:grid-cols-3 gap-3 mt-4">
+              <button id="dlPng" class="btn px-4 py-3 rounded-xl card hover:bg-white ios-border" data-i18n="btn_download">Tải PNG</button>
+              <button id="copyImg" class="btn px-4 py-3 rounded-xl card hover:bg-white ios-border" data-i18n="btn_copy_img">Copy ảnh</button>
+              <button id="copyText" class="btn px-4 py-3 rounded-xl card hover:bg-white ios-border" data-i18n="btn_copy_text">Copy nội dung</button>
+              <button id="printBtn" class="btn px-4 py-3 rounded-xl bg-slate-900 text-white hover:bg-slate-800 sm:col-span-3 ios-border" data-i18n="btn_print">In</button>
+            </div>
+            <p id="note" class="text-xs text-slate-500 mt-3" data-i18n="tip_logo">Mẹo: tăng ECC lên <strong>H</strong> nếu chèn logo lớn.</p>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <!-- Mobile Dock -->
+  <nav class="no-print md:hidden fixed bottom-0 left-0 right-0 z-40 px-4 pb-[calc(10px+env(safe-area-inset-bottom))]">
+    <div class="mx-auto max-w-2xl rounded-2xl ios-card ios-border backdrop-blur-12 shadow-2xl shadow-black/20">
+      <ul class="grid grid-cols-4">
+        <li><button data-dock="home" class="w-full py-3 flex flex-col items-center gap-1 text-xs">
+          <svg class="size-5" viewBox="0 0 24 24" fill="currentColor"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1v-9z"/></svg>
+          <span data-i18n="dock_home">Trang chủ</span></button></li>
+        <li><button data-dock="create" class="w-full py-3 flex flex-col items-center gap-1 text-xs">
+          <svg class="size-5" viewBox="0 0 24 24" fill="currentColor"><path d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2z"/></svg>
+          <span data-i18n="dock_create">Tạo</span></button></li>
+        <li><button data-dock="history" class="w-full py-3 flex flex-col items-center gap-1 text-xs">
+          <svg class="size-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 8v5l4 2-.5.87L11 13V8h1z"/><path d="M12 2a10 10 0 1 0 10 10A10.011 10.011 0 0 0 12 2Z"/></svg>
+          <span data-i18n="dock_history">Lịch sử</span></button></li>
+        <li><button data-dock="settings" class="w-full py-3 flex flex-col items-center gap-1 text-xs">
+          <svg class="size-5" viewBox="0 0 24 24" fill="currentColor"><path d="M19.14,12.94a7.43,7.43,0,0,0,0-1.88l2-1.55a.48.48,0,0,0,.12-.61l-1.9-3.29a.49.49,0,0,0-.58-.22l-2.35-1a7.23,7.23,0,0,0-1.62-.94L14.5,2.5a.49.49,0,0,0-.49-.4H10a.49.49,0,0,0-.49.4L9,4.45a7.23,7.23,0,0,0-1.62.94l-2.35-1a.49.49,0,0,0-.58.22L2.6,7.91a.48.48,0,0,0,.12.61l2,1.55a7.43,7.43,0,0,0,0,1.88l-2,1.55a.48.48,0,0,0,.12.61l1.9,3.29a.49.49,0,0,0,.58.22l2.35,1a.49.49,0,0,0,.58-.22l1.9-3.29a.48.48,0,0,0-.12-.61ZM12,15.5A3.5,3.5,0,1,1,15.5,12,3.5,3.5,0,0,1,12,15.5Z"/></svg>
+          <span data-i18n="dock_settings">Cài đặt</span></button></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- Hidden print area -->
+  <div id="print-area" class="hidden">
+    <div class="print-wrap">
+      <div id="print-box">
+        <div id="print-proxy"></div>
+        <div id="print-title"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* ===================== I18N ===================== */
+const I18N = {
+  vi: {
+    app_title: "QR Maker", app_tagline: "Static • No DB • Pro UI", theme_auto: "Auto",
+    tab_url: "URL/Text", tab_wifi: "Wi-Fi", tab_email: "Email", tab_sms: "SMS", tab_vcard: "vCard", tab_file: "File",
+    type_label: "Loại", opt_url: "URL", opt_text: "Văn bản", content_label: "Nội dung",
+    ssid: "SSID", security: "Bảo mật", no_password: "Không mật khẩu", password: "Mật khẩu", hidden_network: "Mạng ẩn",
+    to: "Đến", subject: "Tiêu đề", body: "Nội dung",
+    phone: "Số điện thoại", sms_text: "Nội dung tin nhắn",
+    last_name: "Họ", first_name: "Tên", company: "Công ty", title: "Chức vụ", tel: "Điện thoại", email: "Email", address: "Địa chỉ", website: "Website",
+    qr_options: "Tuỳ chọn mã QR", size: "Kích thước (px)", code_color: "Màu mã", bg_color: "Màu nền",
+    logo: "Logo (tùy chọn)", logo_ratio: "Tỉ lệ logo (%)",
+    btn_generate: "Tạo QR", btn_clear: "Làm mới", result: "Kết quả",
+    btn_download: "Tải PNG", btn_copy_img: "Copy ảnh", btn_copy_text: "Copy nội dung", btn_print: "In",
+    tip_logo: "Mẹo: tăng ECC lên <strong>H</strong> nếu chèn logo lớn.",
+    dock_home: "Trang chủ", dock_create: "Tạo", dock_history: "Lịch sử", dock_settings: "Cài đặt",
+    print_opts: "Tuỳ chọn In", paper_preset: "Khổ giấy", qr_title: "Tên QR (hiển thị khi in)",
+    paper_w: "Rộng (mm)", paper_h: "Cao (mm)", paper_margin: "Lề (mm)",
+    file_desc: "Không DB/backend. Dùng URL công khai hoặc chọn file cục bộ (Object URL).",
+    file_url: "URL tải file", choose_file: "Chọn file (Object URL)", object_url_warn: "Object URL chỉ hoạt động trên thiết bị hiện tại. Muốn chia sẻ, hãy dùng URL công khai.",
+    toast_created_title: "Đã tạo QR", toast_created_desc: "Sẵn sàng tải/in hoặc chia sẻ",
+    toast_error_title: "Lỗi", toast_refresh_title: "Đã làm mới", toast_refresh_desc: "Khởi tạo lại vùng QR",
+    toast_noqr_title: "Chưa có QR", toast_noqr_desc: "Tạo QR trước đã",
+    toast_download_title: "Đã tải ảnh", toast_download_desc: "qr.png đã được tải xuống",
+    toast_copy_img_title: "Đã copy ảnh", toast_copy_img_desc: "Ảnh QR trong clipboard",
+    toast_copy_img_fail: "Trình duyệt chặn copy ảnh",
+    toast_copy_text_title: "Đã copy nội dung", toast_copy_text_fail: "Trình duyệt chặn copy nội dung"
+  },
+  en: {
+    app_title: "QR Maker", app_tagline: "Static • No DB • Pro UI", theme_auto: "Auto",
+    tab_url: "URL/Text", tab_wifi: "Wi-Fi", tab_email: "Email", tab_sms: "SMS", tab_vcard: "vCard", tab_file: "File",
+    type_label: "Type", opt_url: "URL", opt_text: "Text", content_label: "Content",
+    ssid: "SSID", security: "Security", no_password: "No password", password: "Password", hidden_network: "Hidden network",
+    to: "To", subject: "Subject", body: "Body",
+    phone: "Phone", sms_text: "SMS content",
+    last_name: "Last name", first_name: "First name", company: "Company", title: "Title", tel: "Phone", email: "Email", address: "Address", website: "Website",
+    qr_options: "QR options", size: "Size (px)", code_color: "Code color", bg_color: "Background color",
+    logo: "Logo (optional)", logo_ratio: "Logo ratio (%)",
+    btn_generate: "Generate", btn_clear: "Reset", result: "Result",
+    btn_download: "Download PNG", btn_copy_img: "Copy image", btn_copy_text: "Copy content", btn_print: "Print",
+    tip_logo: "Tip: use ECC <strong>H</strong> when overlaying a large logo.",
+    dock_home: "Home", dock_create: "Create", dock_history: "History", dock_settings: "Settings",
+    print_opts: "Print options", paper_preset: "Paper preset", qr_title: "QR title (shows on print)",
+    paper_w: "Width (mm)", paper_h: "Height (mm)", paper_margin: "Margin (mm)",
+    file_desc: "No DB/backend. Use a public URL or select a local file (Object URL).",
+    file_url: "File URL", choose_file: "Choose file (Object URL)", object_url_warn: "Object URL works only on this device. Use a public URL to share.",
+    toast_created_title: "QR created", toast_created_desc: "Ready to download/print or share",
+    toast_error_title: "Error", toast_refresh_title: "Reset", toast_refresh_desc: "Cleared the QR area",
+    toast_noqr_title: "No QR yet", toast_noqr_desc: "Generate a QR first",
+    toast_download_title: "Image downloaded", toast_download_desc: "qr.png has been saved",
+    toast_copy_img_title: "Image copied", toast_copy_img_desc: "QR image is in clipboard",
+    toast_copy_img_fail: "Browser blocked image copy",
+    toast_copy_text_title: "Content copied", toast_copy_text_fail: "Browser blocked content copy"
+  }
+};
+
+let currentLang = localStorage.getItem('qr_lang') || (navigator.language.startsWith('vi') ? 'vi' : 'en');
+let currentTheme = localStorage.getItem('qr_theme') || 'auto';
+
+function applyI18n(lang){
+  document.documentElement.lang = lang;
+  localStorage.setItem('qr_lang', lang);
+  document.querySelectorAll('[data-i18n]').forEach(el=>{
+    const key = el.getAttribute('data-i18n');
+    el.innerHTML = I18N[lang][key] || el.innerHTML;
+  });
+}
+const THEME_ORDER = ['auto','light','dark'];
+function applyTheme(mode){
+  localStorage.setItem('qr_theme', mode);
+  const final = mode==='auto' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : mode;
+  document.documentElement.setAttribute('data-theme', final);
+  document.getElementById('themeBtn').querySelector('span').textContent =
+    mode==='auto' ? I18N[currentLang]['theme_auto'] : (mode==='light' ? 'Light' : 'Dark');
+}
+
+/* INIT */
+window.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('langSel').value = currentLang;
+  applyI18n(currentLang);
+  document.getElementById('langSel').addEventListener('change', (e)=>{ currentLang=e.target.value; applyI18n(currentLang); });
+  applyTheme(currentTheme);
+  document.getElementById('themeBtn').addEventListener('click', ()=>{
+    const idx = THEME_ORDER.indexOf(currentTheme); currentTheme = THEME_ORDER[(idx+1)%THEME_ORDER.length]; applyTheme(currentTheme);
+  });
+  const pres = document.getElementById('paperPreset');
+  const row = document.getElementById('customRow');
+  const sync = ()=> row.style.display = (pres.value==='custom') ? 'grid' : 'none';
+  pres.addEventListener('change', sync); sync();
+});
+
+/* Tabs */
+const tabs = document.querySelectorAll('.tab');
+const panels = document.querySelectorAll('.panel');
+function activate(tab){ tabs.forEach(t=>t.classList.remove('tab-active')); panels.forEach(p=>p.classList.add('hidden')); tab.classList.add('tab-active'); document.querySelector(`[data-panel="${tab.dataset.tab}"]`).classList.remove('hidden'); }
+activate(tabs[0]); tabs.forEach(t=>t.addEventListener('click',()=>activate(t)));
+
+/* Dock */
+document.querySelectorAll('[data-dock]').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    const a = btn.getAttribute('data-dock');
+    if(a==='home') window.scrollTo({top:0, behavior:'smooth'});
+    if(a==='create') document.getElementById('genBtn').click();
+    if(a==='history') showToast(I18N[currentLang]['dock_history'], I18N[currentLang]['toast_refresh_desc'], 'history');
+    if(a==='settings') showToast(I18N[currentLang]['dock_settings'], I18N[currentLang]['theme_auto']+' / Light / Dark', 'settings');
+  });
+});
+
+/* Toast */
+function showToast(title, message, icon='check'){
+  const root = document.getElementById('toast-root');
+  const card = document.createElement('div');
+  card.className = 'pointer-events-auto rounded-2xl ios-card ios-border backdrop-blur-12 shadow-xl shadow-black/20 px-4 py-3 w-[min(92vw,420px)] toast-enter';
+  card.innerHTML = `
+    <div class="flex items-start gap-3">
+      <div class="shrink-0 rounded-xl bg-slate-900 text-white p-2">
+        <svg class="size-5" viewBox="0 0 24 24" fill="currentColor">
+          ${icon==='check' ? '<path d="M9 16.17l-3.88-3.88L4 13.41l5 5 11-11-1.41-1.41z"/>' :
+            icon==='history' ? '<path d="M13 3a9 9 0 1 0 9 9h-2a7 7 0 1 1-7-7V3zm0 4h1v6h-5v-2h4V7z"/>' :
+            '<path d="M12 8a4 4 0 1 0 4 4 4 4 0 0 0-4-4Zm0-6a1 1 0 0 1 1 1v2a1 1 0 0 1-2 0V3a1 1 0 0 1 1-1ZM3 11a1 1 0 0 1 1-1h2a1 1 0 0 1 0 2H4a1 1 0 0 1-1-1Zm15 0a1 1 0 0 1 1-1h2a1 1 0 0 1 0 2h-2a1 1 0 0 1-1-1ZM11 19a1 1 0 0 1 1 1v2a1 1 0 0 1-2 0V20a1 1 0 0 1 1-1Z"/>'}
+        </svg>
+      </div>
+      <div class="min-w-0">
+        <div class="text-sm font-semibold">${title}</div>
+        <div class="text-xs opacity-80 truncate">${message}</div>
+      </div>
+      <button class="ml-auto rounded-lg px-2 py-1 text-xs border hover:bg-white/60">×</button>
+    </div>`;
+  root.appendChild(card);
+  requestAnimationFrame(()=> card.classList.add('toast-enter-active'));
+  const close = ()=>{ card.classList.remove('toast-enter-active'); card.classList.add('toast-leave-active'); setTimeout(()=> card.remove(), 250); };
+  card.querySelector('button').addEventListener('click', close);
+  setTimeout(close, 3000);
+}
+
+/* Helpers */
+function escapeWifi(s){ return (s||'').replace(/([\\;,:\\"])/g,'\\$1'); }
+function buildPayload(){
+  const active = document.querySelector('.tab.tab-active').dataset.tab;
+  if(active==='url'){
+    const val = document.getElementById('urlText').value.trim();
+    if(!val) throw new Error(currentLang==='vi'?'Vui lòng nhập nội dung.':'Please enter content.'); return val;
+  }
+  if(active==='wifi'){
+    const ssid = escapeWifi(document.getElementById('wifiSsid').value);
+    const type = document.getElementById('wifiType').value;
+    const pass = escapeWifi(document.getElementById('wifiPass').value);
+    const hidden = document.getElementById('wifiHidden').checked;
+    if(!ssid) throw new Error(currentLang==='vi'?'Vui lòng nhập SSID.':'Please enter SSID.');
+    const parts = ['WIFI:',`T:${type};`,`S:${ssid};`, type!=='nopass' && pass? `P:${pass};` : '', hidden? 'H:true;' : '', ';'];
+    return parts.join('');
+  }
+  if(active==='email'){
+    const to = document.getElementById('mailto').value.trim();
+    const subject = encodeURIComponent(document.getElementById('mailSubject').value.trim());
+    const body = encodeURIComponent(document.getElementById('mailBody').value.trim());
+    if(!to) throw new Error(currentLang==='vi'?'Vui lòng nhập email người nhận.':'Please enter recipient email.');
+    let url = `mailto:${to}`; const q=[]; if(subject) q.push(`subject=${subject}`); if(body) q.push(`body=${body}`); if(q.length) url += `?${q.join('&')}`;
+    return url;
+  }
+  if(active==='sms'){
+    const num = document.getElementById('smsNumber').value.trim();
+    const text = encodeURIComponent(document.getElementById('smsBody').value.trim());
+    if(!num) throw new Error(currentLang==='vi'?'Vui lòng nhập số điện thoại.':'Please enter phone number.');
+    return text? `sms:${num}?body=${text}` : `sms:${num}`;
+  }
+  if(active==='vcard'){
+    const N = `${document.getElementById('vLast').value};${document.getElementById('vFirst').value};;;;`;
+    const org = document.getElementById('vOrg').value;
+    const title = document.getElementById('vTitle').value;
+    const tel = document.getElementById('vTel').value;
+    const email = document.getElementById('vEmail').value;
+    const adr = document.getElementById('vAdr').value;
+    const url = document.getElementById('vUrl').value;
+    const lines=['BEGIN:VCARD','VERSION:3.0',`N:${N}`];
+    if(org) lines.push(`ORG:${org}`); if(title) lines.push(`TITLE:${title}`); if(tel) lines.push(`TEL;TYPE=CELL:${tel}`);
+    if(email) lines.push(`EMAIL:${email}`); if(adr) lines.push(`ADR;TYPE=HOME:;;${adr}`); if(url) lines.push(`URL:${url}`);
+    lines.push('END:VCARD'); return lines.join('\\n');
+  }
+  if(active==='file'){
+    const url = document.getElementById('fileUrl').value.trim();
+    const file = document.getElementById('fileInput').files[0];
+    if(url) return url;
+    if(file){
+      const objUrl = URL.createObjectURL(file);
+      document.getElementById('note').innerHTML = currentLang==='vi'
+        ? 'Đang dùng object URL tạm thời — chỉ hoạt động trên máy bạn, không chia sẻ cho người khác.'
+        : 'Using a temporary object URL — works only on this device.';
+      return objUrl;
+    }
+    throw new Error(currentLang==='vi'?'Nhập URL tải file hoặc chọn file cục bộ.':'Enter file URL or select a local file.');
+  }
+  throw new Error('Unsupported.');
+}
+
+function drawLogoIfAny(canvas){
+  const logoFile = document.getElementById('logoInput').files[0];
+  if(!logoFile) return;
+  const ratio = Math.max(0, Math.min(40, parseInt(document.getElementById('logoRatio').value||'20',10))) / 100;
+  const ctx = canvas.getContext('2d');
+  const img = new Image();
+  img.onload = ()=>{
+    const s = Math.floor(canvas.width * ratio);
+    const x = Math.floor((canvas.width - s)/2);
+    const y = Math.floor((canvas.height - s)/2);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(x-4, y-4, s+8, s+8);
+    ctx.drawImage(img, x, y, s, s);
+  };
+  img.src = URL.createObjectURL(logoFile);
+}
+
+function regenerateQR(text){
+  const wrap = document.getElementById('qrcode');
+  wrap.innerHTML = '';
+  const size = parseInt(document.getElementById('qrSize').value||'320',10);
+  const dark = document.getElementById('qrDark').value||'#111827';
+  const light = document.getElementById('qrLight').value||'#ffffff';
+  const ecc = document.getElementById('qrECC').value||'M';
+  new QRCode(wrap, { text, width: size, height: size, colorDark: dark, colorLight: light, correctLevel: QRCode.CorrectLevel[ecc] });
+  const canvas = wrap.querySelector('canvas'); if(canvas) drawLogoIfAny(canvas);
+}
+
+/* Rounded export helpers */
+function roundRectPath(ctx, x, y, w, h, r){
+  r = Math.min(r, w/2, h/2);
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.arcTo(x+w, y, x+w, y+h, r);
+  ctx.arcTo(x+w, y+h, x, y+h, r);
+  ctx.arcTo(x, y+h, x, y, r);
+  ctx.arcTo(x, y, x+w, y, r);
+  ctx.closePath();
+}
+function makeRoundedExport(srcCanvas, padding=24, radius=24, bg='#ffffff', stroke='#e5e7eb'){
+  const out = document.createElement('canvas');
+  out.width = srcCanvas.width + padding*2;
+  out.height = srcCanvas.height + padding*2;
+  const ctx = out.getContext('2d');
+
+  // Background rounded card
+  roundRectPath(ctx, 0, 0, out.width, out.height, radius);
+  ctx.fillStyle = bg; ctx.fill();
+
+  // Optional subtle border
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = stroke;
+  ctx.stroke();
+
+  // Clip inner area where QR will live (so QR corners look rounded too)
+  ctx.save();
+  roundRectPath(ctx, padding, padding, srcCanvas.width, srcCanvas.height, Math.max(8, radius*0.5));
+  ctx.clip();
+  ctx.drawImage(srcCanvas, padding, padding);
+  ctx.restore();
+
+  return out;
+}
+
+/* Print preset (@page) */
+function applyPrintPreset(){
+  const preset = document.getElementById('paperPreset').value;
+  const title = (document.getElementById('qrTitle').value || '').trim();
+  const style = document.getElementById('print-style');
+  let css = '@page{ size:auto; margin:10mm; } #print-proxy canvas{ width:80mm; height:80mm; } #print-title{ font-size:14pt;}';
+  if(preset==='A4P'){ css='@page{size:A4 portrait; margin:15mm;} #print-proxy canvas{width:100mm; height:100mm;} #print-title{font-size:16pt;}'; }
+  if(preset==='A4L'){ css='@page{size:A4 landscape; margin:12mm;} #print-proxy canvas{width:120mm; height:120mm;} #print-title{font-size:16pt;}'; }
+  if(preset==='A5P'){ css='@page{size:A5 portrait; margin:10mm;} #print-proxy canvas{width:80mm; height:80mm;} #print-title{font-size:14pt;}'; }
+  if(preset==='A5L'){ css='@page{size:A5 landscape; margin:10mm;} #print-proxy canvas{width:90mm; height:90mm;} #print-title{font-size:14pt;}'; }
+  if(preset==='80mm'){ css='@page{size:80mm auto; margin:4mm;} #print-proxy canvas{width:64mm; height:64mm;} #print-title{font-size:12pt;}'; }
+  if(preset==='58mm'){ css='@page{size:58mm auto; margin:3mm;} #print-proxy canvas{width:46mm; height:46mm;} #print-title{font-size:11pt;}'; }
+  if(preset==='custom'){
+    const w = Math.max(30, parseInt(document.getElementById('cWidth').value||'80',10));
+    const h = Math.max(30, parseInt(document.getElementById('cHeight').value||'120',10));
+    const m = Math.max(0, parseInt(document.getElementById('cMargin').value||'8',10));
+    const s = Math.floor(Math.min(w,h)*0.8);
+    css = `@page{ size:${w}mm ${h}mm; margin:${m}mm;} #print-proxy canvas{ width:${s}mm; height:${s}mm;} #print-title{font-size:${Math.floor(Math.min(w,h)/8)}pt;}`;
+  }
+  style.textContent = css;
+  document.getElementById('print-title').textContent = title;
+}
+
+/* Actions */
+document.getElementById('genBtn').addEventListener('click', (ev)=>{
+  ev.preventDefault();
+  try{
+    const payload = buildPayload(); document.getElementById('note').innerHTML = '';
+    regenerateQR(payload);
+    showToast(I18N[currentLang]['toast_created_title'], I18N[currentLang]['toast_created_desc'], 'check');
+  }catch(e){ showToast(I18N[currentLang]['toast_error_title'], e.message||'Error'); }
+});
+document.getElementById('clearBtn').addEventListener('click',()=>{
+  document.getElementById('qrcode').innerHTML=''; document.getElementById('note').innerHTML='';
+  showToast(I18N[currentLang]['toast_refresh_title'], I18N[currentLang]['toast_refresh_desc'], 'check');
+});
+
+/* Download PNG (rounded, đẹp) */
+document.getElementById('dlPng').addEventListener('click', ()=>{
+  const c = document.querySelector('#qrcode canvas');
+  if(!c) return showToast(I18N[currentLang]['toast_noqr_title'], I18N[currentLang]['toast_noqr_desc']);
+  const rounded = makeRoundedExport(c, 24, 24, '#ffffff', '#e5e7eb');
+  const a = document.createElement('a');
+  a.href = rounded.toDataURL('image/png');
+  a.download = 'qr.png'; a.click();
+  showToast(I18N[currentLang]['toast_download_title'], I18N[currentLang]['toast_download_desc']);
+});
+
+/* Copy image (cũng bo góc) */
+document.getElementById('copyImg').addEventListener('click', async()=>{
+  const c = document.querySelector('#qrcode canvas');
+  if(!c) return showToast(I18N[currentLang]['toast_noqr_title'], I18N[currentLang]['toast_noqr_desc']);
+  const rounded = makeRoundedExport(c, 24, 24, '#ffffff', '#e5e7eb');
+  rounded.toBlob(async(blob)=>{
+    try{
+      await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
+      showToast(I18N[currentLang]['toast_copy_img_title'], I18N[currentLang]['toast_copy_img_desc']);
+    }catch{ showToast(I18N[currentLang]['toast_error_title'], I18N[currentLang]['toast_copy_img_fail']); }
+  });
+});
+
+document.getElementById('copyText').addEventListener('click', async()=>{
+  try{ const payload = buildPayload(); await navigator.clipboard.writeText(payload);
+    showToast(I18N[currentLang]['toast_copy_text_title'], 'OK');
+  }catch{ showToast(I18N[currentLang]['toast_error_title'], I18N[currentLang]['toast_copy_text_fail']); }
+});
+
+/* Print (vẫn bo góc khi in) */
+document.getElementById('printBtn').addEventListener('click', ()=>{
+  const canvas = document.querySelector('#qrcode canvas');
+  if(!canvas) return showToast(I18N[currentLang]['toast_noqr_title'], I18N[currentLang]['toast_noqr_desc']);
+  const proxy = document.getElementById('print-proxy'); proxy.innerHTML = '';
+  // Dùng export bo góc để in ra đẹp đồng nhất
+  const rounded = makeRoundedExport(canvas, 0, 16, '#ffffff', '#ffffff'); // không viền khi in
+  proxy.appendChild(rounded);
+  applyPrintPreset();
+  window.print();
+});
+</script>
+</body>
+</html>
